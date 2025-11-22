@@ -32,8 +32,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_IAM_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       # 2.1 校验 APP_RUNNER_ARN 是否为有效 ARN（避免把 URL 或名称当作 ARN）
       - name: Validate App Runner ARN format
