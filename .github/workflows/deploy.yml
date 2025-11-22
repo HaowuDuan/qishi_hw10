@@ -34,6 +34,13 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
+      
+      # 2.0 验证 AWS 配置
+      - name: Verify AWS Configuration
+        run: |
+          echo "AWS_REGION: ${{ secrets.AWS_REGION }}"
+          echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+          aws sts get-caller-identity
 
       # 2.1 校验 APP_RUNNER_ARN 是否为有效 ARN（避免把 URL 或名称当作 ARN）
       - name: Validate App Runner ARN format
@@ -82,19 +89,34 @@ jobs:
           echo "APP_RUNNER_SERVICE_NAME=$svc_name" >> $GITHUB_ENV
 
       - name: Fetch App Runner role ARNs
+        env:
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          APP_RUNNER_ARN: ${{ secrets.APP_RUNNER_ARN }}
         run: |
+          echo "AWS_REGION: $AWS_REGION"
+          echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+          echo "APP_RUNNER_ARN: $APP_RUNNER_ARN"
           ACCESS_ROLE_ARN=$(aws apprunner describe-service \
-            --region "${{ secrets.AWS_REGION }}" \
-            --service-arn "${{ secrets.APP_RUNNER_ARN }}" \
+            --region "$AWS_REGION" \
+            --service-arn "$APP_RUNNER_ARN" \
             --query 'Service.SourceConfiguration.AuthenticationConfiguration.AccessRoleArn' \
             --output text)
           INSTANCE_ROLE_ARN=$(aws apprunner describe-service \
-            --region "${{ secrets.AWS_REGION }}" \
-            --service-arn "${{ secrets.APP_RUNNER_ARN }}" \
+            --region "$AWS_REGION" \
+            --service-arn "$APP_RUNNER_ARN" \
             --query 'Service.InstanceConfiguration.InstanceRoleArn' \
             --output text)
           echo "ACCESS_ROLE_ARN: $ACCESS_ROLE_ARN"
           echo "INSTANCE_ROLE_ARN: $INSTANCE_ROLE_ARN"
+          if [ -z "$ACCESS_ROLE_ARN" ] || [ "$ACCESS_ROLE_ARN" = "None" ]; then
+            echo "❌ Failed to fetch ACCESS_ROLE_ARN"
+            exit 1
+          fi
+          if [ -z "$INSTANCE_ROLE_ARN" ] || [ "$INSTANCE_ROLE_ARN" = "None" ]; then
+            echo "❌ Failed to fetch INSTANCE_ROLE_ARN"
+            exit 1
+          fi
           echo "APP_RUNNER_ACCESS_ROLE_ARN=$ACCESS_ROLE_ARN" >> $GITHUB_ENV
           echo "APP_RUNNER_INSTANCE_ROLE_ARN=$INSTANCE_ROLE_ARN" >> $GITHUB_ENV
 
