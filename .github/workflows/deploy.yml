@@ -38,7 +38,8 @@ jobs:
       # 2.1 校验 APP_RUNNER_ARN 是否为有效 ARN（避免把 URL 或名称当作 ARN）
       - name: Validate App Runner ARN format
         run: |
-          ARN="${{ env.APP_RUNNER_ARN }}"
+          ARN="${{ secrets.APP_RUNNER_ARN }}"
+          echo "Validating ARN: $ARN"
           if ! echo "$ARN" | grep -Eq '^arn:aws:apprunner:.*:service\/[^\/]+\/[^\/]+'; then
             echo "❌ APP_RUNNER_ARN 不是有效的 App Runner ARN。示例：arn:aws:apprunner:<region>:<account-id>:service/<service-name>/<service-id>"
             exit 1
@@ -59,6 +60,7 @@ jobs:
       - name: Build and push Docker image
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ env.TAG }}
         run: |
           docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
@@ -67,21 +69,30 @@ jobs:
       # 6. 部署到 App Runner
       - name: Extract App Runner service name from ARN
         run: |
-          svc_name=$(echo "${{ env.APP_RUNNER_ARN }}" | sed -E 's#^.*/service/([^/]+)/.*$#\1#')
+          ARN="${{ secrets.APP_RUNNER_ARN }}"
+          echo "ARN: $ARN"
+          svc_name=$(echo "$ARN" | sed -E 's#^.*/service/([^/]+)/.*$#\1#')
+          echo "Extracted service name: $svc_name"
+          if [ -z "$svc_name" ] || [ "$svc_name" = "$ARN" ]; then
+            echo "❌ Failed to extract service name from ARN"
+            exit 1
+          fi
           echo "APP_RUNNER_SERVICE_NAME=$svc_name" >> $GITHUB_ENV
 
       - name: Fetch App Runner role ARNs
         run: |
           ACCESS_ROLE_ARN=$(aws apprunner describe-service \
-            --region "${{ env.AWS_REGION }}" \
-            --service-arn "${{ env.APP_RUNNER_ARN }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --service-arn "${{ secrets.APP_RUNNER_ARN }}" \
             --query 'Service.SourceConfiguration.AuthenticationConfiguration.AccessRoleArn' \
             --output text)
           INSTANCE_ROLE_ARN=$(aws apprunner describe-service \
-            --region "${{ env.AWS_REGION }}" \
-            --service-arn "${{ env.APP_RUNNER_ARN }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --service-arn "${{ secrets.APP_RUNNER_ARN }}" \
             --query 'Service.InstanceConfiguration.InstanceRoleArn' \
             --output text)
+          echo "ACCESS_ROLE_ARN: $ACCESS_ROLE_ARN"
+          echo "INSTANCE_ROLE_ARN: $INSTANCE_ROLE_ARN"
           echo "APP_RUNNER_ACCESS_ROLE_ARN=$ACCESS_ROLE_ARN" >> $GITHUB_ENV
           echo "APP_RUNNER_INSTANCE_ROLE_ARN=$INSTANCE_ROLE_ARN" >> $GITHUB_ENV
 
@@ -89,8 +100,8 @@ jobs:
         uses: awslabs/amazon-app-runner-deploy@main
         with:
           service: ${{ env.APP_RUNNER_SERVICE_NAME }}
-          image: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.TAG }}
-          region: ${{ env.AWS_REGION }}
+          image: ${{ steps.ecr-login.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ env.TAG }}
+          region: ${{ secrets.AWS_REGION }}
           access-role-arn: ${{ env.APP_RUNNER_ACCESS_ROLE_ARN }}
           instance-role-arn: ${{ env.APP_RUNNER_INSTANCE_ROLE_ARN }}
           port: 8080
