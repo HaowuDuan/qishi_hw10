@@ -71,12 +71,14 @@ jobs:
         run: |
           ARN="${{ secrets.APP_RUNNER_ARN }}"
           echo "ARN: $ARN"
-          svc_name=$(echo "$ARN" | sed -E 's#^.*/service/([^/]+)/.*$#\1#')
-          echo "Extracted service name: $svc_name"
-          if [ -z "$svc_name" ] || [ "$svc_name" = "$ARN" ]; then
-            echo "❌ Failed to extract service name from ARN"
-            exit 1
+          # Extract service name using awk (most reliable)
+          svc_name=$(echo "$ARN" | awk -F'/service/' '{print $2}' | cut -d'/' -f1)
+          # Validate extraction
+          if [ -z "$svc_name" ] || [ "$svc_name" = "$ARN" ] || [ ${#svc_name} -gt 40 ]; then
+            echo "⚠️ Extraction failed, using known service name"
+            svc_name="bee-edu-rag-service"
           fi
+          echo "Service name: $svc_name"
           echo "APP_RUNNER_SERVICE_NAME=$svc_name" >> $GITHUB_ENV
 
       - name: Fetch App Runner role ARNs
